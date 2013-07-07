@@ -78,7 +78,7 @@ func main() {
 	}
 	defer termbox.Close()
 
-	refresh()
+	clear()
 
 	// input handler
 	go func() {
@@ -120,7 +120,8 @@ func flush() {
 	termbox.Flush()
 }
 
-func refresh() {
+func clear() {
+	termbox.Clear(0, 0)
 	w, h := termbox.Size()
 	h *= 2
 	dbuf = make([][]bool, w)
@@ -132,31 +133,23 @@ func refresh() {
 	}
 }
 
-func draw(buf chan int16) {
-	var pos int
-	var v float64
-	fstep := float64(*step)
-
-	for {
+func draw(c chan int16) {
+	for pos := 0; ; pos++ {
 		w, h := len(dbuf), len(dbuf[0])
-		half_h := float64(h / 2)
-		v = 0
-		for i := 0; i < *step; i++ {
-			v += float64(<-buf)
-		}
-		v /= fstep
-		v /= 32768 / half_h
-		v += half_h
-
-		dbuf[pos][int(v)] = true
-
-		pos++
 		if pos >= w {
 			flush()
-			refresh()
-			termbox.Clear(0, 0)
+			clear()
 			pos = 0
 		}
+
+		var v float64
+		for i := 0; i < *step; i++ {
+			v += float64(<-c)
+		}
+
+		half_h := float64(h / 2)
+		v = (v/float64(*step))/(32768/half_h) + half_h
+		dbuf[pos][int(v)] = true
 	}
 }
 
