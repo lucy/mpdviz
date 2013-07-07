@@ -15,6 +15,8 @@ var (
 	step  = flag.Int("s", 2, "number of samples to average in each column")
 	dim   = flag.Bool("d", false, "don't use bold")
 	color = flag.String("c", "blue", "which color to use")
+	file  = flag.String("f", "/tmp/mpd.fifo",
+		"where to read fifo output from")
 )
 
 var colors = map[string]termbox.Attribute{
@@ -37,15 +39,20 @@ func main() {
 	var ok bool
 	on, ok = colors[*color]
 	if !ok {
-		die("unknown color: %s", *color)
+		die("unknown color " + *color)
 	}
 	if !*dim {
 		on = on | termbox.AttrBold
 	}
 
-	err := termbox.Init()
+	file, err := os.Open(*file)
 	if err != nil {
-		panic(err)
+		die(err)
+	}
+
+	err = termbox.Init()
+	if err != nil {
+		die(err)
 	}
 	defer termbox.Close()
 
@@ -62,18 +69,12 @@ func main() {
 		}
 	}()
 
-	buf := make(chan int16, 128)
-	go draw(buf)
-
-	file, err := os.Open("/tmp/mpd.fifo")
-	if err != nil {
-		panic(err)
-	}
-
+	ch := make(chan int16, 128)
+	go draw(ch)
 	for {
 		var i int16
 		binary.Read(file, binary.LittleEndian, &i)
-		buf <- i
+		ch <- i
 	}
 }
 
@@ -87,9 +88,6 @@ func flush() {
 
 			up, down := dbuf[x][y], dbuf[x][y+1]
 			switch {
-			// not needed because we never print more than one cell (yet)
-			//case up && down:
-			//	termbox.SetCell(x, y/2, ' ', on, on)
 			case up:
 				termbox.SetCell(x, y/2, '▀', on, off)
 			case down:
@@ -140,8 +138,7 @@ func draw(buf chan int16) {
 	}
 }
 
-func die(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "error: %s\n",
-		fmt.Sprintf(format, args...))
+func die(args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "mpdviz: %s\n", fmt.Sprint(args...))
 	os.Exit(1)
 }
