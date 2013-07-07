@@ -77,6 +77,18 @@ func main() {
 		on = on | termbox.AttrBold
 	}
 
+	var draw func(chan int16)
+	switch *vis {
+	case "spectrum":
+		draw = drawSpectrum
+	case "wave":
+		draw = drawWave
+	default:
+		fmt.Fprintf(os.Stderr, "mpdviz: unknown visualization %s\n"+
+			"supported visualizations: spectrum, wave\n", *vis)
+		return
+	}
+
 	file, err := os.Open(*file)
 	if err != nil {
 		die(err)
@@ -91,16 +103,7 @@ func main() {
 	clear()
 
 	ch := make(chan int16, 128)
-	switch *vis {
-	case "spectrum":
-		go drawSpectrum(ch)
-	case "wave":
-		go drawWave(ch)
-	default:
-		fmt.Fprintf(os.Stderr, "mpdviz: unknown visualization %s\n"+
-			"supported visualizations: spectrum, wave", *vis)
-		os.Exit(1)
-	}
+	go draw(ch)
 
 	go func() {
 		for {
@@ -114,8 +117,7 @@ func main() {
 	for {
 		ev := termbox.PollEvent()
 		if ev.Ch == 0 && ev.Key == termbox.KeyCtrlC {
-			termbox.Close()
-			os.Exit(0)
+			return
 		}
 	}
 
