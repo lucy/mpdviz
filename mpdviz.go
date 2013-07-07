@@ -26,19 +26,27 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"math"
+	"math/cmplx"
 	"os"
 
+	"github.com/jackvalmadre/go-fftw"
 	"github.com/nsf/termbox-go"
 )
 
-var dbuf [][]bool
-
 var (
-	step  = flag.Int("s", 2, "number of samples to average in each column")
-	dim   = flag.Bool("d", false, "don't use bold")
 	color = flag.String("c", "blue", "which color to use")
-	file  = flag.String("f", "/tmp/mpd.fifo",
+	dim   = flag.Bool("d", false, "don't use bold")
+
+	step = flag.Int("step", 2,
+		"number of samples to average in each column (for wave)")
+	scale = flag.Float64("scale", 3,
+		"scale divisor (for spectrum)")
+
+	file = flag.String("f", "/tmp/mpd.fifo",
 		"where to read fifo output from")
+	vis = flag.String("v", "wave",
+		"choose visualization (spectrum or wave)")
 )
 
 var colors = map[string]termbox.Attribute{
@@ -54,7 +62,9 @@ var colors = map[string]termbox.Attribute{
 }
 
 var on termbox.Attribute
-var off = termbox.ColorBlack
+var off = termbox.ColorDefault
+
+var dbuf [][]bool
 
 func main() {
 	flag.Parse()
@@ -80,27 +90,38 @@ func main() {
 
 	clear()
 
-	// input handler
+	ch := make(chan int16, 128)
+	switch *vis {
+	case "spectrum":
+		go drawSpectrum(ch)
+	case "wave":
+		go drawWave(ch)
+	default:
+		fmt.Fprintf(os.Stderr, "mpdviz: unknown visualization %s\n"+
+			"supported visualizations: spectrum, wave", *vis)
+		os.Exit(1)
+	}
+
 	go func() {
 		for {
-			ev := termbox.PollEvent()
-			if ev.Ch == 0 && ev.Key == termbox.KeyCtrlC {
-				termbox.Close()
-				os.Exit(0)
-			}
+			var i int16
+			binary.Read(file, binary.LittleEndian, &i)
+			ch <- i
 		}
 	}()
 
-	ch := make(chan int16, 128)
-	go draw(ch)
+	// input handler
 	for {
-		var i int16
-		binary.Read(file, binary.LittleEndian, &i)
-		ch <- i
+		ev := termbox.PollEvent()
+		if ev.Ch == 0 && ev.Key == termbox.KeyCtrlC {
+			termbox.Close()
+			os.Exit(0)
+		}
 	}
+
 }
 
-func flush() {
+func flush(both, upc, downc rune) {
 	w, h := len(dbuf[0]), len(dbuf)
 	for x := 0; x < h; x++ {
 		for y := 0; y < w; y++ {
@@ -110,10 +131,12 @@ func flush() {
 
 			up, down := dbuf[x][y], dbuf[x][y+1]
 			switch {
+			case up && down:
+				termbox.SetCell(x, y/2, both, on, off)
 			case up:
-				termbox.SetCell(x, y/2, '▀', on, off)
+				termbox.SetCell(x, y/2, upc, on, off)
 			case down:
-				termbox.SetCell(x, y/2, '▄', on, off)
+				termbox.SetCell(x, y/2, downc, on, off)
 			}
 		}
 	}
@@ -133,11 +156,11 @@ func clear() {
 	}
 }
 
-func draw(c chan int16) {
+func drawWave(c chan int16) {
 	for pos := 0; ; pos++ {
 		w, h := len(dbuf), len(dbuf[0])
 		if pos >= w {
-			flush()
+			flush('█', '▀', '▄')
 			clear()
 			pos = 0
 		}
@@ -150,6 +173,46 @@ func draw(c chan int16) {
 		half_h := float64(h / 2)
 		v = (v/float64(*step))/(32768/half_h) + half_h
 		dbuf[pos][int(v)] = true
+	}
+}
+
+func drawSpectrum(c chan int16) {
+	var (
+		samples = 2048
+		resn    = samples/2 + 1
+		mag     = make([]float64, resn)
+		in      = make([]float64, samples)
+		out     = fftw.Alloc1d(resn)
+		plan    = fftw.PlanDftR2C1d(in, out, fftw.Estimate)
+	)
+
+	// TODO: improve efficiency, possibly dither more frames
+	for {
+		w, h := len(dbuf), len(dbuf[0])
+		for i := 0; i < samples; i++ {
+			in[i] = float64(<-c)
+		}
+
+		plan.Execute()
+		for i := 0; i < resn; i++ {
+			mag[i] = cmplx.Abs(out[i]) / 1e5 * float64(h) / *scale
+		}
+
+		mlen := resn / w
+		for i := 0; i < w; i++ {
+			v := 0.0
+			for _, m := range mag[mlen*i:][:mlen] {
+				v += m
+			}
+			v /= float64(mlen)
+			v = math.Min(float64(h), v)
+			for j := h - 1; j > h-int(v); j-- {
+				dbuf[i][j] = true
+			}
+		}
+
+		flush('┃', '╹', '╻')
+		clear()
 	}
 }
 
