@@ -1,0 +1,23 @@
+pkgname=mpdviz
+pkgver=0.1
+pkgrel=1
+pkgdesc='Standalone MPD visualizer'
+arch=('x86_64' 'i686' 'ARM')
+url='https://github.com/neeee/mpdviz'
+license=('MIT')
+makedepends=('go')
+options=('!emptydirs')
+_gourl='github.com/neeee/mpdviz'
+
+build() {
+  cd "$srcdir"
+  GOPATH="$srcdir" go get -u -v ${_gourl}/...
+}
+
+package() {
+  mkdir -p "$pkgdir/usr/bin"
+  cp -v "$srcdir/bin"/* "$pkgdir/usr/bin"
+}
+
+# vim:set ts=2 sw=2 et:
+
