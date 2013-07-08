@@ -180,7 +180,7 @@ func drawWave(c chan int16) {
 
 func drawSpectrum(c chan int16) {
 	var (
-		samples = 2048
+		samples = 128
 		resn    = samples/2 + 1
 		mag     = make([]float64, resn)
 		in      = make([]float64, samples)
@@ -188,9 +188,18 @@ func drawSpectrum(c chan int16) {
 		plan    = fftw.PlanDftR2C1d(in, out, fftw.Estimate)
 	)
 
-	// TODO: improve efficiency, possibly dither more frames
 	for {
 		w, h := len(dbuf), len(dbuf[0])
+		if w2 := w * 2; samples != w2 {
+			fftw.Free1d(out)
+			samples = w2
+			resn = w2/2 + 1
+			mag = make([]float64, resn)
+			in = make([]float64, w2)
+			out = fftw.Alloc1d(resn)
+			plan = fftw.PlanDftR2C1d(in, out, fftw.Estimate)
+		}
+
 		for i := 0; i < samples; i++ {
 			in[i] = float64(<-c)
 		}
