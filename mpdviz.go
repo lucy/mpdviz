@@ -40,7 +40,7 @@ var (
 
 	step = flag.Int("step", 2,
 		"number of samples to average in each column (for wave)")
-	scale = flag.Float64("scale", 3,
+	scale = flag.Float64("scale", 2,
 		"scale divisor (for spectrum)")
 
 	file = flag.String("f", "/tmp/mpd.fifo",
@@ -180,22 +180,20 @@ func drawWave(c chan int16) {
 
 func drawSpectrum(c chan int16) {
 	var (
-		samples = 128
-		resn    = samples/2 + 1
-		mag     = make([]float64, resn)
-		in      = make([]float64, samples)
-		out     = fftw.Alloc1d(resn)
-		plan    = fftw.PlanDftR2C1d(in, out, fftw.Estimate)
+		samples int
+		resn    int = -1
+		in      []float64
+		out     = fftw.Alloc1d(1) // hack to make the Free1d call not panic
+		plan    *fftw.Plan
 	)
 
 	for {
 		w, h := len(dbuf), len(dbuf[0])
-		if w2 := w * 2; samples != w2 {
+		if resn != w && !(w <= 1) {
 			fftw.Free1d(out)
-			samples = w2
-			resn = w2/2 + 1
-			mag = make([]float64, resn)
-			in = make([]float64, w2)
+			resn = w
+			samples = (w - 1) * 2
+			in = make([]float64, samples)
 			out = fftw.Alloc1d(resn)
 			plan = fftw.PlanDftR2C1d(in, out, fftw.Estimate)
 		}
@@ -205,17 +203,8 @@ func drawSpectrum(c chan int16) {
 		}
 
 		plan.Execute()
-		for i := 0; i < resn; i++ {
-			mag[i] = cmplx.Abs(out[i]) / 1e5 * float64(h) / *scale
-		}
-
-		mlen := resn / w
 		for i := 0; i < w; i++ {
-			v := 0.0
-			for _, m := range mag[mlen*i:][:mlen] {
-				v += m
-			}
-			v /= float64(mlen)
+			v := cmplx.Abs(out[i]) / 1e5 * float64(h) / *scale
 			v = math.Min(float64(h), v)
 			for j := h - 1; j > h-int(v); j-- {
 				dbuf[i][j] = true
