@@ -26,6 +26,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"math/cmplx"
 	"os"
@@ -43,7 +44,7 @@ var (
 	scale = flag.Float64("scale", 2,
 		"scale divisor (for spectrum)")
 
-	file = flag.String("f", "/tmp/mpd.fifo",
+	filename = flag.String("f", "/tmp/mpd.fifo",
 		"where to read fifo output from")
 	vis = flag.String("v", "wave",
 		"choose visualization (spectrum or wave)")
@@ -63,78 +64,95 @@ var colors = map[string]termbox.Attribute{
 
 var on termbox.Attribute
 var off = termbox.ColorDefault
+var upc, downc, bothc rune
 
+var draw func(chan int16)
 var dbuf [][]bool
 
-func main() {
+var termboxRan bool
+
+func die(format string, args ...interface{}) {
+	if termboxRan {
+		termbox.Close()
+	}
+	fmt.Fprintf(os.Stderr, format, args...)
+	os.Exit(1)
+}
+
+func init() {
 	flag.Parse()
 	var ok bool
 	on, ok = colors[*color]
 	if !ok {
-		die("unknown color " + *color)
+		die("Unknown color \"%s\"\n", *color)
 	}
 	if !*dim {
 		on = on | termbox.AttrBold
 	}
 
-	var draw func(chan int16)
 	switch *vis {
 	case "spectrum":
 		draw = drawSpectrum
 	case "wave":
 		draw = drawWave
 	default:
-		fmt.Fprintf(os.Stderr, "mpdviz: unknown visualization %s\n"+
-			"supported visualizations: spectrum, wave\n", *vis)
-		return
+		die("Unknown visualisation \"%s\"\n"+
+			"Supported: spectrum, wave\n", *vis)
 	}
+}
 
-	file, err := os.Open(*file)
+func main() {
+	file, err := os.Open(*filename)
 	if err != nil {
-		die(err)
+		die("%s\n", err)
 	}
+	defer file.Close()
 
 	err = termbox.Init()
 	if err != nil {
-		die(err)
+		die("%s\b", err)
 	}
+	termboxRan = true
 	defer termbox.Close()
 
-	clear()
-
 	ch := make(chan int16, 128)
+	end := make(chan string)
+
+	// drawer
+	clear()
 	go draw(ch)
 
+	// input handler
 	go func() {
 		for {
-			var i int16
-			binary.Read(file, binary.LittleEndian, &i)
-			ch <- i
+			ev := termbox.PollEvent()
+			if ev.Ch == 0 && ev.Key == termbox.KeyCtrlC {
+				close(end)
+			}
 		}
 	}()
 
-	// input handler
-	for {
-		ev := termbox.PollEvent()
-		if ev.Ch == 0 && ev.Key == termbox.KeyCtrlC {
-			return
+	// file reader
+	go func() {
+		var i int16
+		for binary.Read(file, binary.LittleEndian, &i) != io.EOF {
+			ch <- i
 		}
-	}
+		close(end)
+	}()
 
+	<-end
 }
 
-func flush(both, upc, downc rune) {
+// print everything in buffer
+func flush() {
 	w, h := len(dbuf[0]), len(dbuf)
 	for x := 0; x < h; x++ {
-		for y := 0; y < w; y++ {
-			if y%2 != 0 {
-				continue
-			}
-
+		for y := 0; y < w; y += 2 {
 			up, down := dbuf[x][y], dbuf[x][y+1]
 			switch {
 			case up && down:
-				termbox.SetCell(x, y/2, both, on, off)
+				termbox.SetCell(x, y/2, bothc, on, off)
 			case up:
 				termbox.SetCell(x, y/2, upc, on, off)
 			case down:
@@ -159,12 +177,14 @@ func clear() {
 }
 
 func drawWave(c chan int16) {
+	bothc, upc, downc = '█', '▀', '▄'
+	w, h := len(dbuf), len(dbuf[0])
 	for pos := 0; ; pos++ {
-		w, h := len(dbuf), len(dbuf[0])
 		if pos >= w {
-			flush('█', '▀', '▄')
+			flush()
 			clear()
 			pos = 0
+			w, h = len(dbuf), len(dbuf[0])
 		}
 
 		var v float64
@@ -173,12 +193,19 @@ func drawWave(c chan int16) {
 		}
 
 		half_h := float64(h / 2)
-		v = (v/float64(*step))/(32768/half_h) + half_h
-		dbuf[pos][int(v)] = true
+		v = v/float64(*step)/(32768/half_h) + half_h
+		vi := int(v)
+		if vi > h-1 {
+			vi = h - 1
+		} else if v < 0 {
+			vi = 0
+		}
+		dbuf[pos][vi] = true
 	}
 }
 
 func drawSpectrum(c chan int16) {
+	bothc, upc, downc = '┃', '╹', '╻'
 	var (
 		samples int
 		resn    int = -1
@@ -211,12 +238,7 @@ func drawSpectrum(c chan int16) {
 			}
 		}
 
-		flush('┃', '╹', '╻')
+		flush()
 		clear()
 	}
-}
-
-func die(args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "mpdviz: %s\n", fmt.Sprint(args...))
-	os.Exit(1)
 }
