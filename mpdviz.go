@@ -24,29 +24,29 @@ package main
 
 import (
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"io"
 	"math/cmplx"
 	"os"
 
 	"github.com/jackvalmadre/go-fftw"
+	flag "github.com/neeee/pflag"
 	"github.com/nsf/termbox-go"
 )
 
 var (
-	color = flag.String("c", "blue", "which color to use")
-	dim   = flag.Bool("d", false, "don't use bold")
+	color = flag.StringP("color", "c", "blue", "Color to use")
+	dim   = flag.BoolP("dim", "d", false, "Turn off bold")
 
 	step = flag.Int("step", 2,
-		"number of samples to average in each column (for wave)")
+		"Number of samples to average in each column (for wave)")
 	scale = flag.Float64("scale", 2,
-		"scale divisor (for spectrum)")
+		"Scale divisor (for spectrum)")
 
-	filename = flag.String("f", "/tmp/mpd.fifo",
-		"where to read fifo output from")
-	vis = flag.String("v", "wave",
-		"choose visualization (spectrum or wave)")
+	filename = flag.StringP("file", "f", "/tmp/mpd.fifo",
+		"Where to read fifo output from")
+	vis = flag.StringP("viz", "v", "wave",
+		"Visualization (spectrum or wave)")
 )
 
 var colors = map[string]termbox.Attribute{
