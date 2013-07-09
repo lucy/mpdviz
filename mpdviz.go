@@ -186,7 +186,7 @@ func drawSpectrum(c chan int16) {
 			samples = (w - 1) * 2
 			in = make([]float64, samples)
 			out = fftw.Alloc1d(resn)
-			plan = fftw.PlanDftR2C1d(in, out, fftw.Estimate)
+			plan = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 		}
 
 		for i := 0; i < samples; i++ {
