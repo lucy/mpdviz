@@ -128,6 +128,7 @@ func main() {
 			ev := termbox.PollEvent()
 			if ev.Ch == 0 && ev.Key == termbox.KeyCtrlC {
 				close(end)
+				return
 			}
 		}
 	}()
@@ -146,33 +147,44 @@ func main() {
 
 // print everything in buffer
 func flush() {
-	w, h := len(dbuf[0]), len(dbuf)
-	for x := 0; x < h; x++ {
-		for y := 0; y < w; y += 2 {
-			up, down := dbuf[x][y], dbuf[x][y+1]
+	cb := termbox.CellBuffer()
+	w, h := len(dbuf), len(dbuf[0])
+	for x := 0; x < w; x++ {
+		for y := 0; y < h; y += 2 {
+			u, d := idbuf[x*h+y], idbuf[x*h+y+1]
 			switch {
-			case up && down:
-				termbox.SetCell(x, y/2, bothc, on, off)
-			case up:
-				termbox.SetCell(x, y/2, upc, on, off)
-			case down:
-				termbox.SetCell(x, y/2, downc, on, off)
+			case u && d:
+				cb[y/2*w+x] = termbox.Cell{bothc, on, off}
+			case u:
+				cb[y/2*w+x] = termbox.Cell{upc, on, off}
+			case d:
+				cb[y/2*w+x] = termbox.Cell{downc, on, off}
 			}
+
 		}
 	}
 	termbox.Flush()
+	termbox.Clear(0, 0)
+	clear()
 }
 
+// all of dbuf
+var idbuf []bool
+
 func clear() {
-	termbox.Clear(0, 0)
 	w, h := termbox.Size()
 	h *= 2
-	dbuf = make([][]bool, w)
-	for i := 0; i < w; i++ {
-		dbuf[i] = make([]bool, h)
-		for j := 0; j < h; j++ {
-			dbuf[i][j] = false
+	if w != len(dbuf) || h != len(dbuf[0]) {
+		dbuf = make([][]bool, w)
+		idbuf = make([]bool, w*h)
+		for i := range dbuf {
+			dbuf[i] = idbuf[i*h:][:h]
 		}
+		return
+	}
+
+	for i := range idbuf {
+		idbuf[i] = false
 	}
 }
 
