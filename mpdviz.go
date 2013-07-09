@@ -27,7 +27,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math"
 	"math/cmplx"
 	"os"
 
@@ -64,10 +63,8 @@ var colors = map[string]termbox.Attribute{
 
 var on termbox.Attribute
 var off = termbox.ColorDefault
-var upc, downc, bothc rune
 
 var draw func(chan int16)
-var dbuf [][]bool
 
 var termboxRan bool
 
@@ -119,7 +116,6 @@ func main() {
 	end := make(chan string)
 
 	// drawer
-	clear()
 	go draw(ch)
 
 	// input handler
@@ -145,58 +141,16 @@ func main() {
 	<-end
 }
 
-// print everything in buffer
-func flush() {
-	cb := termbox.CellBuffer()
-	w, h := len(dbuf), len(dbuf[0])
-	for x := 0; x < w; x++ {
-		for y := 0; y < h; y += 2 {
-			u, d := idbuf[x*h+y], idbuf[x*h+y+1]
-			switch {
-			case u && d:
-				cb[y/2*w+x] = termbox.Cell{bothc, on, off}
-			case u:
-				cb[y/2*w+x] = termbox.Cell{upc, on, off}
-			case d:
-				cb[y/2*w+x] = termbox.Cell{downc, on, off}
-			}
-
-		}
-	}
-	termbox.Flush()
-	termbox.Clear(0, 0)
-	clear()
-}
-
-// all of dbuf
-var idbuf []bool
-
-func clear() {
+func drawWave(c chan int16) {
 	w, h := termbox.Size()
 	h *= 2
-	if w != len(dbuf) || h != len(dbuf[0]) {
-		dbuf = make([][]bool, w)
-		idbuf = make([]bool, w*h)
-		for i := range dbuf {
-			dbuf[i] = idbuf[i*h:][:h]
-		}
-		return
-	}
-
-	for i := range idbuf {
-		idbuf[i] = false
-	}
-}
-
-func drawWave(c chan int16) {
-	bothc, upc, downc = '█', '▀', '▄'
-	w, h := len(dbuf), len(dbuf[0])
 	for pos := 0; ; pos++ {
 		if pos >= w {
-			flush()
-			clear()
 			pos = 0
-			w, h = len(dbuf), len(dbuf[0])
+			w, h = termbox.Size()
+			h *= 2
+			termbox.Flush()
+			termbox.Clear(0, 0)
 		}
 
 		var v float64
@@ -205,19 +159,16 @@ func drawWave(c chan int16) {
 		}
 
 		half_h := float64(h / 2)
-		v = v/float64(*step)/(32768/half_h) + half_h
-		vi := int(v)
-		if vi > h-1 {
-			vi = h - 1
-		} else if v < 0 {
-			vi = 0
+		vi := int(v/float64(*step)/(32768/half_h) + half_h)
+		if vi%2 == 0 {
+			termbox.SetCell(pos, vi/2, '▀', on, off)
+		} else {
+			termbox.SetCell(pos, vi/2, '▄', on, off)
 		}
-		dbuf[pos][vi] = true
 	}
 }
 
 func drawSpectrum(c chan int16) {
-	bothc, upc, downc = '┃', '╹', '╻'
 	var (
 		samples int
 		resn    int = -1
@@ -227,7 +178,8 @@ func drawSpectrum(c chan int16) {
 	)
 
 	for {
-		w, h := len(dbuf), len(dbuf[0])
+		w, h := termbox.Size()
+		h *= 2
 		if resn != w && !(w <= 1) {
 			fftw.Free1d(out)
 			resn = w
@@ -244,13 +196,16 @@ func drawSpectrum(c chan int16) {
 		plan.Execute()
 		for i := 0; i < w; i++ {
 			v := cmplx.Abs(out[i]) / 1e5 * float64(h) / *scale
-			v = math.Min(float64(h), v)
-			for j := h - 1; j > h-int(v); j-- {
-				dbuf[i][j] = true
+			vi := int(v)
+			for j := h - 1; j > h-vi; j-- {
+				termbox.SetCell(i, j/2, '┃', on, off)
+			}
+			if vi%2 != 0 {
+				termbox.SetCell(i, (h-vi)/2, '╻', on, off)
 			}
 		}
 
-		flush()
-		clear()
+		termbox.Flush()
+		termbox.Clear(0, 0)
 	}
 }
