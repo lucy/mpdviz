@@ -26,6 +26,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"math/cmplx"
 	"os"
 
@@ -159,7 +160,7 @@ func drawWave(c chan int16) {
 		}
 
 		half_h := float64(h / 2)
-		vi := int(v/float64(*step)/(32768/half_h) + half_h)
+		vi := int(v/float64(*step)/(math.MaxInt16/half_h) + half_h)
 		if vi%2 == 0 {
 			termbox.SetCell(pos, vi/2, '▀', on, off)
 		} else {
