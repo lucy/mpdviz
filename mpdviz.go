@@ -39,9 +39,7 @@ var (
 	color = flag.StringP("color", "c", "blue", "Color to use")
 	dim   = flag.BoolP("dim", "d", false, "Turn off bold")
 
-	step = flag.Int("step", 2,
-		"Number of samples to average in each column (wave)")
-
+	step   = flag.Int("step", 2, "Samples to average in each column (wave)")
 	scale  = flag.Float64("scale", 2, "Scale divisor (spectrum)")
 	icolor = flag.BoolP("intensitycolor", "i", false,
 		"color bars based on intensity (spectrum)")
