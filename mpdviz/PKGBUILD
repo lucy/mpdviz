@@ -1,5 +1,5 @@
 pkgname=mpdviz
-pkgver=0.3.1
+pkgver=0.3.2
 pkgrel=1
 pkgdesc='Standalone console MPD visualizer'
 arch=('x86_64' 'i686' 'ARM')
@@ -12,7 +12,12 @@ _gourl='github.com/neeee/mpdviz'
 
 build() {
   cd "$srcdir"
-  GOPATH="$srcdir" go get -u -v ${_gourl}/...
+  GOPATH="$srcdir"
+  go get -u -d -v "$_gourl"
+  cd "$srcdir/src/$_gourl"
+  git checkout -q tags/$pkgver
+  go install
+  git checkout master # otherwise git complains on go get
 }
 
 package() {
