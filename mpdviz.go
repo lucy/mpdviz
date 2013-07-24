@@ -62,55 +62,57 @@ var colors = map[string]termbox.Attribute{
 	"white":   termbox.ColorWhite,
 }
 
+var iColors = [...]termbox.Attribute{
+	16 + termbox.ColorBlue,
+	16 + termbox.ColorCyan,
+	16 + termbox.ColorGreen,
+	16 + termbox.ColorYellow,
+	16 + termbox.ColorRed,
+}
+
 var on termbox.Attribute
 var off = termbox.ColorDefault
 
-var draw func(chan int16)
-
-var termboxRan bool
-
-func die(format string, args ...interface{}) {
-	if termboxRan {
-		termbox.Close()
-	}
+func warn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, args...)
-	os.Exit(1)
 }
 
-func init() {
+func main() {
 	flag.Parse()
 	var ok bool
 	on, ok = colors[*color]
 	if !ok {
-		die("Unknown color \"%s\"\n", *color)
+		warn("Unknown color \"%s\"\n", *color)
+		return
 	}
 	if !*dim {
 		on = on | termbox.AttrBold
 	}
 
+	var draw func(chan int16)
 	switch *vis {
 	case "spectrum":
 		draw = drawSpectrum
 	case "wave":
 		draw = drawWave
 	default:
-		die("Unknown visualisation \"%s\"\n"+
+		warn("Unknown visualisation \"%s\"\n"+
 			"Supported: spectrum, wave\n", *vis)
+		return
 	}
-}
 
-func main() {
 	file, err := os.Open(*filename)
 	if err != nil {
-		die("%s\n", err)
+		warn("%s\n", err)
+		return
 	}
 	defer file.Close()
 
 	err = termbox.Init()
 	if err != nil {
-		die("%s\b", err)
+		warn("%s\b", err)
+		return
 	}
-	termboxRan = true
 	defer termbox.Close()
 
 	ch := make(chan int16, 128)
@@ -169,27 +171,21 @@ func drawWave(c chan int16) {
 	}
 }
 
-var rbc = [...]termbox.Attribute{
-	termbox.ColorBlue,
-	termbox.ColorCyan,
-	termbox.ColorGreen,
-	termbox.ColorYellow,
-	termbox.ColorRed,
-}
-
 func drawSpectrum(c chan int16) {
+	w, h := termbox.Size()
+	h *= 2
 	var (
-		samples int
-		resn    int = -1
-		in      []float64
-		out     = fftw.Alloc1d(1) // make the Free1d call not panic, FIXME
-		plan    *fftw.Plan
+		samples = (w - 1) * 2
+		resn    = w
+		in      = make([]float64, samples)
+		out     = fftw.Alloc1d(resn)
+		plan    = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 	)
 
 	for {
-		w, h := termbox.Size()
+		w, h = termbox.Size()
 		h *= 2
-		if resn != w && !(w <= 1) {
+		if resn != w && w > 1 {
 			fftw.Free1d(out)
 			resn = w
 			samples = (w - 1) * 2
@@ -203,12 +199,12 @@ func drawSpectrum(c chan int16) {
 		}
 
 		plan.Execute()
+		hf := float64(h)
 		for i := 0; i < w; i++ {
-			v := cmplx.Abs(out[i]) / 1e5 * float64(h) / *scale
+			v := cmplx.Abs(out[i]) / 1e5 * hf / *scale
 			vi := int(v)
 			if *icolor {
-				on = rbc[int(math.Min(4,
-					(v/float64(h))*5))] | termbox.AttrBold
+				on = iColors[int(math.Min(4, (v/hf)*5))]
 			}
 			for j := h - 1; j > h-vi; j-- {
 				termbox.SetCell(i, j/2, '┃', on, off)
