@@ -170,8 +170,8 @@ func drawWave(c chan int16) {
 }
 
 var rbc = [...]termbox.Attribute{
-	termbox.ColorCyan,
 	termbox.ColorBlue,
+	termbox.ColorCyan,
 	termbox.ColorGreen,
 	termbox.ColorYellow,
 	termbox.ColorRed,
