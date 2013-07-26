@@ -32,7 +32,7 @@ import (
 
 	"github.com/jackvalmadre/go-fftw"
 	flag "github.com/neeee/pflag"
-	"github.com/nsf/termbox-go"
+	"github.com/neeee/termbox-go"
 )
 
 var (
@@ -43,6 +43,8 @@ var (
 	scale  = flag.Float64("scale", 2, "Scale divisor (spectrum)")
 	icolor = flag.BoolP("intensitycolor", "i", false,
 		"color bars based on intensity (spectrum)")
+	extcolor = flag.Bool("256", false,
+		"use 256 colors in intensitycolors")
 
 	filename = flag.StringP("file", "f", "/tmp/mpd.fifo",
 		"Where to read fifo output from")
@@ -62,16 +64,18 @@ var colors = map[string]termbox.Attribute{
 	"white":   termbox.ColorWhite,
 }
 
-var iColors = [...]termbox.Attribute{
-	16 + termbox.ColorBlue,
-	16 + termbox.ColorCyan,
-	16 + termbox.ColorGreen,
-	16 + termbox.ColorYellow,
-	16 + termbox.ColorRed,
+var iColors = []termbox.Attribute{
+	8 + termbox.ColorBlue,
+	8 + termbox.ColorCyan,
+	8 + termbox.ColorGreen,
+	8 + termbox.ColorYellow,
+	8 + termbox.ColorRed,
 }
 
-var on termbox.Attribute
-var off = termbox.ColorDefault
+var (
+	on  = termbox.ColorDefault
+	off = termbox.ColorDefault
+)
 
 func warn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, args...)
@@ -87,6 +91,12 @@ func main() {
 	}
 	if !*dim {
 		on = on | termbox.AttrBold
+	}
+	if *extcolor {
+		iColors = []termbox.Attribute{
+			21, 27, 39, 45, 51, 86, 85, 84, 82,
+			154, 192, 220, 214, 208, 202, 196,
+		}
 	}
 
 	var draw func(chan int16)
@@ -144,16 +154,18 @@ func main() {
 	<-end
 }
 
-func drawWave(c chan int16) {
+func size() (int, int) {
 	w, h := termbox.Size()
-	h *= 2
+	return w, h * 2
+}
+func drawWave(c chan int16) {
+	w, h := size()
 	for pos := 0; ; pos++ {
 		if pos >= w {
 			pos = 0
-			w, h = termbox.Size()
-			h *= 2
+			w, h = size()
 			termbox.Flush()
-			termbox.Clear(0, 0)
+			termbox.Clear(off, off)
 		}
 
 		var v float64
@@ -172,8 +184,7 @@ func drawWave(c chan int16) {
 }
 
 func drawSpectrum(c chan int16) {
-	w, h := termbox.Size()
-	h *= 2
+	w, h := size()
 	var (
 		samples = (w - 1) * 2
 		resn    = w
@@ -183,9 +194,7 @@ func drawSpectrum(c chan int16) {
 	)
 
 	for {
-		w, h = termbox.Size()
-		h *= 2
-		if resn != w && w > 1 {
+		if resn != w && w != 1 {
 			fftw.Free1d(out)
 			resn = w
 			samples = (w - 1) * 2
@@ -204,7 +213,8 @@ func drawSpectrum(c chan int16) {
 			v := cmplx.Abs(out[i]) / 1e5 * hf / *scale
 			vi := int(v)
 			if *icolor {
-				on = iColors[int(math.Min(4, (v/hf)*5))]
+				on = iColors[int(math.Min(float64(len(iColors)-1),
+					(v/hf)*float64(len(iColors)-1)))]
 			}
 			for j := h - 1; j > h-vi; j-- {
 				termbox.SetCell(i, j/2, '┃', on, off)
@@ -215,6 +225,7 @@ func drawSpectrum(c chan int16) {
 		}
 
 		termbox.Flush()
-		termbox.Clear(0, 0)
+		termbox.Clear(off, off)
+		w, h = size()
 	}
 }
