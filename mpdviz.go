@@ -43,8 +43,8 @@ var (
 	scale  = flag.Float64("scale", 2, "Scale divisor (spectrum)")
 	icolor = flag.BoolP("intensitycolor", "i", false,
 		"color bars based on intensity (spectrum)")
-	extcolor = flag.Bool("256", false,
-		"use 256 colors in intensitycolors")
+	imode = flag.String("imode", "dumb",
+		"intensitycolor mode (dumb, 256 or grayscale)")
 
 	filename = flag.StringP("file", "f", "/tmp/mpd.fifo",
 		"Where to read fifo output from")
@@ -64,13 +64,7 @@ var colors = map[string]termbox.Attribute{
 	"white":   termbox.ColorWhite,
 }
 
-var iColors = []termbox.Attribute{
-	8 + termbox.ColorBlue,
-	8 + termbox.ColorCyan,
-	8 + termbox.ColorGreen,
-	8 + termbox.ColorYellow,
-	8 + termbox.ColorRed,
-}
+var iColors []termbox.Attribute
 
 var (
 	on  = termbox.ColorDefault
@@ -92,11 +86,29 @@ func main() {
 	if !*dim {
 		on = on | termbox.AttrBold
 	}
-	if *extcolor {
+	switch *imode {
+	case "dumb":
+		iColors = []termbox.Attribute{
+			8 + termbox.ColorBlue,
+			8 + termbox.ColorCyan,
+			8 + termbox.ColorGreen,
+			8 + termbox.ColorYellow,
+			8 + termbox.ColorRed,
+		}
+	case "256":
 		iColors = []termbox.Attribute{
 			21, 27, 39, 45, 51, 86, 85, 84, 82,
 			154, 192, 220, 214, 208, 202, 196,
 		}
+	case "grayscale":
+		const num = 19
+		iColors = make([]termbox.Attribute, num)
+		for i := termbox.Attribute(0); i < num; i++ {
+			iColors[i] = i + 255 - num
+		}
+	default:
+		warn("Unsupported mode: \"%s\"\n", *imode)
+		return
 	}
 
 	var draw func(chan int16)
