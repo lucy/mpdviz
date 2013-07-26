@@ -36,20 +36,22 @@ import (
 )
 
 var (
-	color = flag.StringP("color", "c", "blue", "Color to use")
-	dim   = flag.BoolP("dim", "d", false, "Turn off bold")
+	color = flag.StringP("color", "c", "default", "Color to use")
+	dim   = flag.BoolP("dim", "d", false,
+		"Turn off bright colors where possible")
 
-	step   = flag.Int("step", 2, "Samples to average in each column (wave)")
-	scale  = flag.Float64("scale", 2, "Scale divisor (spectrum)")
-	icolor = flag.BoolP("intensitycolor", "i", false,
-		"color bars based on intensity (spectrum)")
+	step  = flag.Int("step", 2, "Samples to average in each column (wave)")
+	scale = flag.Float64("scale", 2, "Scale divisor (spectrum)")
+
+	icolor = flag.BoolP("icolor", "i", false,
+		"Color bars according to intensity (spectrum)")
 	imode = flag.String("imode", "dumb",
-		"intensitycolor mode (dumb, 256 or grayscale)")
+		"Mode for intensity colorisation (dumb, 256 or grayscale)")
 
 	filename = flag.StringP("file", "f", "/tmp/mpd.fifo",
-		"Where to read fifo output from")
+		"Where to read pcm date from")
 	vis = flag.StringP("viz", "v", "wave",
-		"Visualization (spectrum or wave)")
+		"Visualisation (spectrum or wave)")
 )
 
 var colors = map[string]termbox.Attribute{
@@ -77,23 +79,31 @@ func warn(format string, args ...interface{}) {
 
 func main() {
 	flag.Parse()
-	var ok bool
-	on, ok = colors[*color]
-	if !ok {
+
+	if cl, ok := colors[*color]; !ok {
 		warn("Unknown color \"%s\"\n", *color)
 		return
+	} else {
+		on = cl
 	}
+
 	if !*dim {
 		on = on | termbox.AttrBold
 	}
+
 	switch *imode {
 	case "dumb":
 		iColors = []termbox.Attribute{
-			8 + termbox.ColorBlue,
-			8 + termbox.ColorCyan,
-			8 + termbox.ColorGreen,
-			8 + termbox.ColorYellow,
-			8 + termbox.ColorRed,
+			termbox.ColorBlue,
+			termbox.ColorCyan,
+			termbox.ColorGreen,
+			termbox.ColorYellow,
+			termbox.ColorRed,
+		}
+		if !*dim {
+			for i := range iColors {
+				iColors[i] = iColors[i] + 8
+			}
 		}
 	case "256":
 		iColors = []termbox.Attribute{
@@ -137,8 +147,10 @@ func main() {
 	}
 	defer termbox.Close()
 
-	ch := make(chan int16, 128)
-	end := make(chan string)
+	var (
+		ch  = make(chan int16, 128)
+		end = make(chan string)
+	)
 
 	// drawer
 	go draw(ch)
