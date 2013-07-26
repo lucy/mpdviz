@@ -10,6 +10,7 @@ This is a console visualizer for MPD. It has two modes:
 	  -c, --color="blue"           Color to use
 	  -d, --dim=false              Turn off bold
 	  -f, --file="/tmp/mpd.fifo"   Where to read fifo output from
+	      --imode="dumb"           intensitycolor mode (dumb, 256 or grayscale)
 	  -i, --intensitycolor=false   color bars based on intensity (spectrum)
 	      --scale=2                Scale divisor (spectrum)
 	      --step=2                 Samples to average in each column (wave)
