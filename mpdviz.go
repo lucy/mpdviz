@@ -49,7 +49,7 @@ var (
 		"Mode for intensity colorisation (dumb, 256 or grayscale)")
 
 	filename = flag.StringP("file", "f", "/tmp/mpd.fifo",
-		"Where to read pcm date from")
+		"Where to read pcm data from")
 	vis = flag.StringP("viz", "v", "wave",
 		"Visualisation (spectrum or wave)")
 )
