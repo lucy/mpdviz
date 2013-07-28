@@ -121,7 +121,7 @@ func main() {
 		return
 	}
 
-	var draw func(chan int16)
+	var draw func(*os.File, chan bool)
 	switch *vis {
 	case "spectrum":
 		draw = drawSpectrum
@@ -147,13 +147,10 @@ func main() {
 	}
 	defer termbox.Close()
 
-	var (
-		ch  = make(chan int16, 128)
-		end = make(chan string)
-	)
+	end := make(chan bool)
 
 	// drawer
-	go draw(ch)
+	go draw(file, end)
 
 	// input handler
 	go func() {
@@ -166,15 +163,6 @@ func main() {
 		}
 	}()
 
-	// file reader
-	go func() {
-		var i int16
-		for binary.Read(file, binary.LittleEndian, &i) != io.EOF {
-			ch <- i
-		}
-		close(end)
-	}()
-
 	<-end
 }
 
@@ -182,19 +170,28 @@ func size() (int, int) {
 	w, h := termbox.Size()
 	return w, h * 2
 }
-func drawWave(c chan int16) {
+
+func drawWave(file *os.File, end chan bool) {
 	w, h := size()
+	inRaw := make([]int16, w**step)
 	for pos := 0; ; pos++ {
 		if pos >= w {
 			pos = 0
 			w, h = size()
+			if s := w * *step; len(inRaw) != s {
+				inRaw = make([]int16, s)
+			}
+			if binary.Read(file, binary.LittleEndian, &inRaw) == io.EOF {
+				close(end)
+				return
+			}
 			termbox.Flush()
 			termbox.Clear(off, off)
 		}
 
 		var v float64
 		for i := 0; i < *step; i++ {
-			v += float64(<-c)
+			v += float64(inRaw[pos**step+i])
 		}
 
 		half_h := float64(h / 2)
@@ -207,12 +204,13 @@ func drawWave(c chan int16) {
 	}
 }
 
-func drawSpectrum(c chan int16) {
+func drawSpectrum(file *os.File, end chan bool) {
 	w, h := size()
 	var (
 		samples = (w - 1) * 2
 		resn    = w
 		in      = make([]float64, samples)
+		inRaw   = make([]int16, samples)
 		out     = fftw.Alloc1d(resn)
 		plan    = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 	)
@@ -223,12 +221,18 @@ func drawSpectrum(c chan int16) {
 			resn = w
 			samples = (w - 1) * 2
 			in = make([]float64, samples)
+			inRaw = make([]int16, samples)
 			out = fftw.Alloc1d(resn)
 			plan = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 		}
 
+		if binary.Read(file, binary.LittleEndian, &inRaw) == io.EOF {
+			close(end)
+			return
+		}
+
 		for i := 0; i < samples; i++ {
-			in[i] = float64(<-c)
+			in[i] = float64(inRaw[i])
 		}
 
 		plan.Execute()
