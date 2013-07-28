@@ -44,7 +44,7 @@ var (
 	dim   = flag.BoolP("dim", "d", false,
 		"Turn off bright colors where possible")
 
-	tick = flag.DurationP("tick", "t", time.Second/25,
+	tick = flag.DurationP("tick", "t", 0,
 		"Minimum time to spend on a frame, set higher to\n"+
 			oPad+"lower CPU usage. ncmpcpp uses 40ms (25fps).")
 
@@ -195,6 +195,7 @@ func size() (int, int) {
 }
 
 func drawWave(file *os.File, end chan bool) {
+	defer close(end)
 	w, h := size()
 	inRaw := make([]int16, w**step)
 	for pos := 0; ; pos++ {
@@ -205,7 +206,6 @@ func drawWave(file *os.File, end chan bool) {
 				inRaw = make([]int16, s)
 			}
 			if binary.Read(file, binary.LittleEndian, &inRaw) == io.EOF {
-				close(end)
 				return
 			}
 			termbox.Flush()
@@ -229,6 +229,7 @@ func drawWave(file *os.File, end chan bool) {
 }
 
 func drawSpectrum(file *os.File, end chan bool) {
+	defer close(end)
 	w, h := size()
 	var (
 		samples = (w - 1) * 2
@@ -250,8 +251,7 @@ func drawSpectrum(file *os.File, end chan bool) {
 			plan = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 		}
 
-		if binary.Read(file, binary.LittleEndian, &inRaw) == io.EOF {
-			close(end)
+		if binary.Read(file, binary.LittleEndian, &inRaw) != nil {
 			return
 		}
 
