@@ -36,14 +36,17 @@ import (
 	"github.com/neeee/termbox-go"
 )
 
+// TODO: put this into pflag
+const oPad = "                               "
+
 var (
 	color = flag.StringP("color", "c", "default", "Color to use")
 	dim   = flag.BoolP("dim", "d", false,
 		"Turn off bright colors where possible")
 
-	tick = flag.DurationP("tick", "t", time.Millisecond*20,
-		"Minimum time to spend on a frame, "+
-			"set higher to lower CPU usage.")
+	tick = flag.DurationP("tick", "t", time.Second/25,
+		"Minimum time to spend on a frame, set higher to\n"+
+			oPad+"lower CPU usage. ncmpcpp uses 40ms (25fps).")
 
 	step  = flag.Int("step", 2, "Samples to average in each column (wave)")
 	scale = flag.Float64("scale", 2, "Scale divisor (spectrum)")
@@ -51,7 +54,7 @@ var (
 	icolor = flag.BoolP("icolor", "i", false,
 		"Color bars according to intensity (spectrum)")
 	imode = flag.String("imode", "dumb",
-		"Mode for intensity colorisation (dumb, 256 or grayscale)")
+		"Mode for colorisation (dumb, 256 or grayscale)")
 
 	filename = flag.StringP("file", "f", "/tmp/mpd.fifo",
 		"Where to read pcm data from")
@@ -77,6 +80,16 @@ var (
 	on  = termbox.ColorDefault
 	off = termbox.ColorDefault
 )
+
+// inaccurate ticker
+func ticker(d time.Duration, ch chan struct{}) {
+	for {
+		time.Sleep(d)
+		ch <- struct{}{}
+	}
+}
+
+var tickc = make(chan struct{})
 
 func warn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, args...)
@@ -152,6 +165,11 @@ func main() {
 	}
 	defer termbox.Close()
 
+	if *tick == 0 {
+		close(tickc)
+	} else {
+		go ticker(*tick, tickc)
+	}
 	end := make(chan bool)
 
 	// drawer
@@ -179,7 +197,6 @@ func size() (int, int) {
 func drawWave(file *os.File, end chan bool) {
 	w, h := size()
 	inRaw := make([]int16, w**step)
-	wait := time.Tick(*tick)
 	for pos := 0; ; pos++ {
 		if pos >= w {
 			pos = 0
@@ -193,7 +210,7 @@ func drawWave(file *os.File, end chan bool) {
 			}
 			termbox.Flush()
 			termbox.Clear(off, off)
-			<-wait
+			<-tickc
 		}
 
 		var v float64
@@ -222,7 +239,6 @@ func drawSpectrum(file *os.File, end chan bool) {
 		plan    = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 	)
 
-	wait := time.Tick(*tick)
 	for {
 		if resn != w && w != 1 {
 			fftw.Free1d(out)
@@ -262,7 +278,7 @@ func drawSpectrum(file *os.File, end chan bool) {
 
 		termbox.Flush()
 		termbox.Clear(off, off)
-		<-wait
+		<-tickc
 		w, h = size()
 	}
 }

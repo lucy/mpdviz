@@ -6,12 +6,15 @@ This is a console visualizer for MPD. It has two modes:
 
 ![wave](http://goput.it/511.gif "wave")
 
+
 	Usage of mpdviz:
-	  -c, --color="blue"           Color to use
-	  -d, --dim=false              Turn off bold
-	  -f, --file="/tmp/mpd.fifo"   Where to read fifo output from
-	      --imode="dumb"           intensitycolor mode (dumb, 256 or grayscale)
-	  -i, --intensitycolor=false   color bars based on intensity (spectrum)
+	  -c, --color="default"        Color to use
+	  -d, --dim=false              Turn off bright colors where possible
+	  -f, --file="/tmp/mpd.fifo"   Where to read pcm data from
+	  -i, --icolor=false           Color bars according to intensity (spectrum)
+	      --imode="dumb"           Mode for colorisation (dumb, 256 or grayscale)
 	      --scale=2                Scale divisor (spectrum)
 	      --step=2                 Samples to average in each column (wave)
-	  -v, --viz="wave"             Visualization (spectrum or wave)
+	  -t, --tick=40ms              Minimum time to spend on a frame, set higher to
+	                               lower CPU usage. ncmpcpp uses 40ms (25fps).
+	  -v, --viz="wave"             Visualisation (spectrum or wave)
