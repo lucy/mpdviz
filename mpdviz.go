@@ -29,6 +29,7 @@ import (
 	"math"
 	"math/cmplx"
 	"os"
+	"time"
 
 	"github.com/jackvalmadre/go-fftw"
 	flag "github.com/neeee/pflag"
@@ -39,6 +40,10 @@ var (
 	color = flag.StringP("color", "c", "default", "Color to use")
 	dim   = flag.BoolP("dim", "d", false,
 		"Turn off bright colors where possible")
+
+	tick = flag.DurationP("tick", "t", time.Millisecond*20,
+		"Minimum time to spend on a frame, "+
+			"set higher to lower CPU usage.")
 
 	step  = flag.Int("step", 2, "Samples to average in each column (wave)")
 	scale = flag.Float64("scale", 2, "Scale divisor (spectrum)")
@@ -174,6 +179,7 @@ func size() (int, int) {
 func drawWave(file *os.File, end chan bool) {
 	w, h := size()
 	inRaw := make([]int16, w**step)
+	wait := time.Tick(*tick)
 	for pos := 0; ; pos++ {
 		if pos >= w {
 			pos = 0
@@ -187,6 +193,7 @@ func drawWave(file *os.File, end chan bool) {
 			}
 			termbox.Flush()
 			termbox.Clear(off, off)
+			<-wait
 		}
 
 		var v float64
@@ -215,6 +222,7 @@ func drawSpectrum(file *os.File, end chan bool) {
 		plan    = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 	)
 
+	wait := time.Tick(*tick)
 	for {
 		if resn != w && w != 1 {
 			fftw.Free1d(out)
@@ -254,6 +262,7 @@ func drawSpectrum(file *os.File, end chan bool) {
 
 		termbox.Flush()
 		termbox.Clear(off, off)
+		<-wait
 		w, h = size()
 	}
 }
