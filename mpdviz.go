@@ -23,6 +23,7 @@ DEALINGS IN THE SOFTWARE.package main
 package main
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -228,14 +229,24 @@ func drawWave(file *os.File, end chan bool) {
 	}
 }
 
+type buffer []byte
+
+func (b *buffer) Read(p []byte) (n int, err error) {
+	return copy(p, *b), nil
+}
+
 func drawSpectrum(file *os.File, end chan bool) {
 	defer close(end)
+	const int16size = 2
+	rd := bufio.NewReader(file)
 	w, h := size()
+	ilen := float64(len(iColors))
 	var (
 		samples = (w - 1) * 2
 		resn    = w
 		in      = make([]float64, samples)
 		inRaw   = make([]int16, samples)
+		buf     = make(buffer, samples*int16size)
 		out     = fftw.Alloc1d(resn)
 		plan    = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 	)
@@ -247,12 +258,22 @@ func drawSpectrum(file *os.File, end chan bool) {
 			samples = (w - 1) * 2
 			in = make([]float64, samples)
 			inRaw = make([]int16, samples)
+			buf = make(buffer, samples*int16size)
 			out = fftw.Alloc1d(resn)
 			plan = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 		}
 
-		if binary.Read(file, binary.LittleEndian, &inRaw) != nil {
-			return
+		if rd.Buffered() > len(buf) {
+			for rd.Buffered() > len(buf) {
+				rd.Read(buf)
+			}
+			if binary.Read(&buf, binary.LittleEndian, &inRaw) != nil {
+				return
+			}
+		} else {
+			if binary.Read(rd, binary.LittleEndian, &inRaw) != nil {
+				return
+			}
 		}
 
 		for i := 0; i < samples; i++ {
@@ -262,22 +283,22 @@ func drawSpectrum(file *os.File, end chan bool) {
 		plan.Execute()
 		hf := float64(h)
 		for i := 0; i < w; i++ {
-			v := cmplx.Abs(out[i]) / 1e5 * hf / *scale
-			vi := int(v)
+			v := cmplx.Abs(out[i]) / 1e5 / *scale
 			if *icolor {
-				on = iColors[int(math.Min(float64(len(iColors)-1),
-					(v/hf)*float64(len(iColors)-1)))]
+				on = iColors[int(math.Min(ilen-1, v*(ilen-1)))]
 			}
-			for j := h - 1; j > h-vi; j-- {
+			hd := int(v * hf)
+			for j := h - 1; j > h-hd; j-- {
 				termbox.SetCell(i, j/2, '┃', on, off)
 			}
-			if vi%2 != 0 {
-				termbox.SetCell(i, (h-vi)/2, '╻', on, off)
+			if hd%2 != 0 {
+				termbox.SetCell(i, (h-hd)/2, '╻', on, off)
 			}
 		}
 
 		termbox.Flush()
 		termbox.Clear(off, off)
+
 		<-tickc
 		w, h = size()
 	}
