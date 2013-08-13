@@ -28,7 +28,6 @@ import (
 	"math"
 	"math/cmplx"
 	"os"
-	"time"
 
 	"github.com/jackvalmadre/go-fftw"
 	flag "github.com/neeee/pflag"
@@ -39,9 +38,6 @@ var (
 	color = flag.StringP("color", "c", "default", "Color to use")
 	dim   = flag.BoolP("dim", "d", false,
 		"Turn off bright colors where possible")
-
-	tick = flag.DurationP("tick", "t", 0,
-		"Min time to spend on frames. Not supported for lines.")
 
 	step  = flag.Int("step", 2, "Samples for each step (wave/lines)")
 	scale = flag.Float64("scale", 2, "Scale divisor (spectrum)")
@@ -75,16 +71,6 @@ var (
 	on  = termbox.ColorDefault
 	off = termbox.ColorDefault
 )
-
-// inaccurate ticker
-func ticker(d time.Duration, ch chan struct{}) {
-	for {
-		time.Sleep(d)
-		ch <- struct{}{}
-	}
-}
-
-var tickc = make(chan struct{})
 
 func warn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, args...)
@@ -162,14 +148,7 @@ func main() {
 	}
 	defer termbox.Close()
 
-	if *tick == 0 {
-		close(tickc)
-	} else {
-		go ticker(*tick, tickc)
-	}
 	end := make(chan bool)
-
-	// drawer
 	go draw(file, end)
 
 	// input handler
@@ -233,7 +212,6 @@ func drawWave(file *os.File, end chan bool) {
 
 		termbox.Flush()
 		termbox.Clear(off, off)
-		<-tickc
 	}
 
 }
@@ -296,8 +274,6 @@ func drawSpectrum(file *os.File, end chan bool) {
 		termbox.Flush()
 		termbox.Clear(off, off)
 		w, h = size()
-
-		<-tickc
 	}
 }
 
@@ -356,6 +332,5 @@ func drawLines(file *os.File, end chan bool) {
 		termbox.SetCell(c.x, c.y, '#',
 			on, termbox.ColorDefault)
 		termbox.Flush()
-		time.Sleep(1)
 	}
 }
