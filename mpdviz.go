@@ -23,7 +23,6 @@ DEALINGS IN THE SOFTWARE.package main
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"math"
@@ -194,36 +193,49 @@ func size() (int, int) {
 
 func drawWave(file *os.File, end chan bool) {
 	defer close(end)
-	w, h := size()
-	inRaw := make([]int16, w**step)
-	for pos := 0; ; pos++ {
-		if pos >= w {
-			pos = 0
-			w, h = size()
-			if s := w * *step; len(inRaw) != s {
-				inRaw = make([]int16, s)
-			}
-			if readInt16s(file, inRaw) == io.EOF {
-				return
-			}
-			termbox.Flush()
-			termbox.Clear(off, off)
-			<-tickc
+	var (
+		inRaw []int16
+		ilen  = len(iColors) - 1
+		flen  = float64(ilen)
+		fstep = float64(*step)
+	)
+	for {
+		w, h := size()
+		if s := w * *step; len(inRaw) != s {
+			inRaw = make([]int16, s)
 		}
 
-		var v float64
-		for i := 0; i < *step; i++ {
-			v += float64(inRaw[pos**step+i])
+		if readInt16s(file, inRaw) == io.EOF {
+			return
 		}
 
 		half_h := float64(h / 2)
-		vi := int(v/float64(*step)/(math.MaxInt16/half_h) + half_h)
-		if vi%2 == 0 {
-			termbox.SetCell(pos, vi/2, '▀', on, off)
-		} else {
-			termbox.SetCell(pos, vi/2, '▄', on, off)
+		offset := 0
+		for pos := 0; pos < w; pos++ {
+			var v float64
+			for i := 0; i < *step; i++ {
+				v += float64(inRaw[offset+i])
+			}
+			offset += *step
+			v /= fstep
+
+			if *icolor {
+				on = iColors[min(ilen, abs(int(v/(math.MaxInt16/flen))))]
+			}
+
+			vi := int(v/(math.MaxInt16/half_h) + half_h)
+			if vi%2 == 0 {
+				termbox.SetCell(pos, vi/2, '▀', on, off)
+			} else {
+				termbox.SetCell(pos, vi/2, '▄', on, off)
+			}
 		}
+
+		termbox.Flush()
+		termbox.Clear(off, off)
+		<-tickc
 	}
+
 }
 
 type buffer []byte
@@ -234,16 +246,14 @@ func (b *buffer) Read(p []byte) (n int, err error) {
 
 func drawSpectrum(file *os.File, end chan bool) {
 	defer close(end)
-	const int16size = 2
-	rd := bufio.NewReader(file)
-	w, h := size()
-	ilen := float64(len(iColors))
 	var (
+		w, h    = size()
+		ilen    = len(iColors) - 1
+		flen    = float64(ilen)
 		samples = (w - 1) * 2
 		resn    = w
 		in      = make([]float64, samples)
 		inRaw   = make([]int16, samples)
-		buf     = make(buffer, samples*int16size)
 		out     = fftw.Alloc1d(resn)
 		plan    = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 	)
@@ -255,36 +265,26 @@ func drawSpectrum(file *os.File, end chan bool) {
 			samples = (w - 1) * 2
 			in = make([]float64, samples)
 			inRaw = make([]int16, samples)
-			buf = make(buffer, samples*int16size)
 			out = fftw.Alloc1d(resn)
 			plan = fftw.PlanDftR2C1d(in, out, fftw.Measure)
 		}
 
-		if rd.Buffered() > len(buf) {
-			for rd.Buffered() > len(buf) {
-				rd.Read(buf)
-			}
-			if readInt16s(&buf, inRaw) != nil {
-				return
-			}
-		} else {
-			if readInt16s(rd, inRaw) != nil {
-				return
-			}
+		if readInt16s(file, inRaw) != nil {
+			return
 		}
 
-		for i := 0; i < samples; i++ {
+		for i := range inRaw {
 			in[i] = float64(inRaw[i])
 		}
 
 		plan.Execute()
-		hf := float64(h)
+		hFloat := float64(h)
 		for i := 0; i < w; i++ {
 			v := cmplx.Abs(out[i]) / 1e5 / *scale
 			if *icolor {
-				on = iColors[int(math.Min(ilen-1, v*(ilen-1)))]
+				on = iColors[min(ilen, int(v*(flen)))]
 			}
-			hd := int(v * hf)
+			hd := int(v * hFloat)
 			for j := h - 1; j > h-hd; j-- {
 				termbox.SetCell(i, j/2, '┃', on, off)
 			}
@@ -295,9 +295,9 @@ func drawSpectrum(file *os.File, end chan bool) {
 
 		termbox.Flush()
 		termbox.Clear(off, off)
+		w, h = size()
 
 		<-tickc
-		w, h = size()
 	}
 }
 
