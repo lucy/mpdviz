@@ -24,7 +24,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -37,30 +36,26 @@ import (
 	"github.com/neeee/termbox-go"
 )
 
-// TODO: put this into pflag
-const oPad = "                               "
-
 var (
 	color = flag.StringP("color", "c", "default", "Color to use")
 	dim   = flag.BoolP("dim", "d", false,
 		"Turn off bright colors where possible")
 
 	tick = flag.DurationP("tick", "t", 0,
-		"Minimum time to spend on a frame, set higher to\n"+
-			oPad+"lower CPU usage. ncmpcpp uses 40ms (25fps).")
+		"Min time to spend on frames. Not supported for lines.")
 
-	step  = flag.Int("step", 2, "Samples to average in each column (wave)")
+	step  = flag.Int("step", 2, "Samples for each step (wave/lines)")
 	scale = flag.Float64("scale", 2, "Scale divisor (spectrum)")
 
 	icolor = flag.BoolP("icolor", "i", false,
-		"Color bars according to intensity (spectrum)")
+		"Color bars according to intensity (spectrum/lines)")
 	imode = flag.String("imode", "dumb",
 		"Mode for colorisation (dumb, 256 or grayscale)")
 
 	filename = flag.StringP("file", "f", "/tmp/mpd.fifo",
 		"Where to read pcm data from")
 	vis = flag.StringP("viz", "v", "wave",
-		"Visualisation (spectrum or wave)")
+		"Visualisation (spectrum, wave or lines)")
 )
 
 var colors = map[string]termbox.Attribute{
@@ -146,6 +141,8 @@ func main() {
 		draw = drawSpectrum
 	case "wave":
 		draw = drawWave
+	case "lines":
+		draw = drawLines
 	default:
 		warn("Unknown visualisation \"%s\"\n"+
 			"Supported: spectrum, wave\n", *vis)
@@ -206,7 +203,7 @@ func drawWave(file *os.File, end chan bool) {
 			if s := w * *step; len(inRaw) != s {
 				inRaw = make([]int16, s)
 			}
-			if binary.Read(file, binary.LittleEndian, &inRaw) == io.EOF {
+			if readInt16s(file, inRaw) == io.EOF {
 				return
 			}
 			termbox.Flush()
@@ -267,11 +264,11 @@ func drawSpectrum(file *os.File, end chan bool) {
 			for rd.Buffered() > len(buf) {
 				rd.Read(buf)
 			}
-			if binary.Read(&buf, binary.LittleEndian, &inRaw) != nil {
+			if readInt16s(&buf, inRaw) != nil {
 				return
 			}
 		} else {
-			if binary.Read(rd, binary.LittleEndian, &inRaw) != nil {
+			if readInt16s(rd, inRaw) != nil {
 				return
 			}
 		}
@@ -301,5 +298,64 @@ func drawSpectrum(file *os.File, end chan bool) {
 
 		<-tickc
 		w, h = size()
+	}
+}
+
+type pair struct{ x, y int }
+
+var dirs = [9]pair{
+	{1, 1}, {-1, -1},
+	{1, -1}, {-1, 1},
+	{1, 0}, {-1, 0},
+	{0, 1}, {0, -1},
+	{0, 0},
+}
+
+type coord struct{ x, y, dir int }
+
+func (c *coord) step(x, y int) {
+	c.x += dirs[c.dir].x
+	c.y += dirs[c.dir].y
+	c.x, c.y = mod(c.x, x), mod(c.y, y)
+}
+
+func drawLines(file *os.File, end chan bool) {
+	defer close(end)
+	var (
+		c, bc coord
+		inraw = make([]int16, *step)
+		hist  = make([]pair, 1000)
+		ilen  = len(iColors) - 1
+		filen = float64(ilen)
+	)
+
+	for {
+		if readInt16s(file, inraw) == io.EOF {
+			return
+		}
+
+		var raw float64
+		for i := range inraw {
+			raw += float64(inraw[i])
+		}
+		raw /= float64(*step)
+		c.dir = min(8, abs(int(raw/(math.MaxInt16/8))))
+		bc.dir = 8 - c.dir
+		if *icolor {
+			on = iColors[min(ilen, abs(int(raw/(math.MaxInt16/filen))))]
+		}
+
+		w, h := termbox.Size()
+		bc.step(w, h)
+		c.step(w, h)
+
+		hist = append(hist[1:], pair{c.x, c.y})
+		termbox.SetCell(hist[0].x, hist[0].y, ' ',
+			termbox.ColorDefault,
+			termbox.ColorDefault)
+		termbox.SetCell(c.x, c.y, '#',
+			on, termbox.ColorDefault)
+		termbox.Flush()
+		time.Sleep(1)
 	}
 }
