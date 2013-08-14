@@ -4,7 +4,7 @@ This is a console visualizer for MPD. It has three modes:
 
 ![spectrum](http://goput.it/ji6.gif "spectrum")
 
-![wave](http://goput.it/511.gif "wave")
+![wave](http://goput.it/hnq.gif "wave")
 
 ![lines](http://goput.it/s9d.gif "lines")
 
@@ -17,5 +17,4 @@ This is a console visualizer for MPD. It has three modes:
           --imode="dumb"           Mode for colorisation (dumb, 256 or grayscale)
           --scale=2                Scale divisor (spectrum)
           --step=2                 Samples for each step (wave/lines)
-      -t, --tick=0                 Min time to spend on frames. Not supported for lines.
       -v, --viz="wave"             Visualisation (spectrum, wave or lines)
