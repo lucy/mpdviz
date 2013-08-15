@@ -259,8 +259,8 @@ func drawSpectrum(file *os.File, end chan bool) {
 			for j := h - 1; j > h-hd; j-- {
 				termbox.SetCell(i, j/2, '┃', on, off)
 			}
-			if hd%2 != 0 {
-				termbox.SetCell(i, (h-hd)/2+1, '╻', on, off)
+			if hd%2 == 0 {
+				termbox.SetCell(i, (h-hd)/2, '╻', on, off)
 			}
 		}
 
