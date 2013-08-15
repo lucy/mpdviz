@@ -25,7 +25,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"math"
 	"math/cmplx"
 	"os"
 
@@ -71,6 +70,8 @@ var (
 	on  = termbox.ColorDefault
 	off = termbox.ColorDefault
 )
+
+var maxInt16 float64 = 1<<15 - 1
 
 func warn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, args...)
@@ -173,10 +174,9 @@ func size() (int, int) {
 func drawWave(file *os.File, end chan bool) {
 	defer close(end)
 	var (
-		inRaw []int16
-		ilen  = len(iColors) - 1
-		flen  = float64(ilen)
-		fstep = float64(*step)
+		inRaw  []int16
+		ibound = len(iColors) - 1
+		ilen   = float64(len(iColors))
 	)
 	for {
 		w, h := size()
@@ -184,25 +184,24 @@ func drawWave(file *os.File, end chan bool) {
 			inRaw = make([]int16, s)
 		}
 
-		if readInt16s(file, inRaw) == io.EOF {
+		if readInt16s(file, inRaw) != nil {
 			return
 		}
 
 		half_h := float64(h / 2)
-		offset := 0
+		div := maxInt16 / half_h
 		for pos := 0; pos < w; pos++ {
 			var v float64
 			for i := 0; i < *step; i++ {
-				v += float64(inRaw[offset+i])
+				v += float64(inRaw[pos**step+i])
 			}
-			offset += *step
-			v /= fstep
+			v /= float64(*step)
 
 			if *icolor {
-				on = iColors[min(ilen, abs(int(v/(math.MaxInt16/flen))))]
+				on = iColors[min(ibound, abs(int(v/(maxInt16/ilen))))]
 			}
 
-			vi := int(v/(math.MaxInt16/half_h) + half_h)
+			vi := int(v/div + half_h)
 			if vi%2 == 0 {
 				termbox.SetCell(pos, vi/2, '▀', on, off)
 			} else {
@@ -213,34 +212,29 @@ func drawWave(file *os.File, end chan bool) {
 		termbox.Flush()
 		termbox.Clear(off, off)
 	}
-
-}
-
-type buffer []byte
-
-func (b *buffer) Read(p []byte) (n int, err error) {
-	return copy(p, *b), nil
 }
 
 func drawSpectrum(file *os.File, end chan bool) {
 	defer close(end)
 	var (
-		w, h    = size()
-		ilen    = len(iColors) - 1
-		flen    = float64(ilen)
-		samples = (w - 1) * 2
-		resn    = w
-		in      = make([]float64, samples)
-		inRaw   = make([]int16, samples)
-		out     = fftw.Alloc1d(resn)
-		plan    = fftw.PlanDftR2C1d(in, out, fftw.Measure)
+		ilen  = len(iColors) - 1
+		flen  = float64(len(iColors))
+		resn  = -1
+		in    []float64
+		inRaw []int16
+		out   []complex128
+		plan  *fftw.Plan
 	)
 
 	for {
-		if resn != w && w != 1 {
-			fftw.Free1d(out)
+		w, h := size()
+		if resn != w {
+			w := max(2, w)
+			if out != nil {
+				fftw.Free1d(out)
+			}
 			resn = w
-			samples = (w - 1) * 2
+			samples := (w - 1) * 2
 			in = make([]float64, samples)
 			inRaw = make([]int16, samples)
 			out = fftw.Alloc1d(resn)
@@ -256,24 +250,22 @@ func drawSpectrum(file *os.File, end chan bool) {
 		}
 
 		plan.Execute()
-		hFloat := float64(h)
 		for i := 0; i < w; i++ {
 			v := cmplx.Abs(out[i]) / 1e5 / *scale
 			if *icolor {
-				on = iColors[min(ilen, int(v*(flen)))]
+				on = iColors[min(ilen, int(v*flen))]
 			}
-			hd := int(v * hFloat)
+			hd := int(v * float64(h))
 			for j := h - 1; j > h-hd; j-- {
 				termbox.SetCell(i, j/2, '┃', on, off)
 			}
 			if hd%2 != 0 {
-				termbox.SetCell(i, (h-hd)/2, '╻', on, off)
+				termbox.SetCell(i, (h-hd)/2+1, '╻', on, off)
 			}
 		}
 
 		termbox.Flush()
 		termbox.Clear(off, off)
-		w, h = size()
 	}
 }
 
@@ -315,22 +307,22 @@ func drawLines(file *os.File, end chan bool) {
 			raw += float64(inraw[i])
 		}
 		raw /= float64(*step)
-		c.dir = min(8, abs(int(raw/(math.MaxInt16/8))))
+		c.dir = min(8, abs(int(raw/maxInt16*8)))
 		bc.dir = 8 - c.dir
 		if *icolor {
-			on = iColors[min(ilen, abs(int(raw/(math.MaxInt16/filen))))]
+			on = iColors[min(ilen, abs(int(raw/maxInt16*filen)))]
 		}
 
 		w, h := termbox.Size()
 		bc.step(w, h)
 		c.step(w, h)
 
+		// TODO: make this more efficient, somehow
 		hist = append(hist[1:], pair{c.x, c.y})
-		termbox.SetCell(hist[0].x, hist[0].y, ' ',
-			termbox.ColorDefault,
-			termbox.ColorDefault)
-		termbox.SetCell(c.x, c.y, '#',
-			on, termbox.ColorDefault)
+
+		termbox.SetCell(hist[0].x, hist[0].y, ' ', off, off)
+		termbox.SetCell(c.x, c.y, '#', on, off)
+
 		termbox.Flush()
 	}
 }
