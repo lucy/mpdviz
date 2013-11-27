@@ -28,7 +28,7 @@ import (
 	"math/cmplx"
 	"os"
 
-	"github.com/jackvalmadre/go-fftw"
+	"github.com/neeee/go-fftw"
 	flag "github.com/neeee/pflag"
 	"github.com/neeee/termbox-go"
 )
