@@ -1,5 +1,9 @@
+// This code is fucking awful because I didn't know anything about audio
+// when it was written (and probably still don't by the time anyone reads
+// this).
+
 /*
-Copyright (C) 2013 Lucy
+Copyright (C) 2013-2014 Lucy
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the "Software"),
