@@ -39,7 +39,7 @@ import (
 
 var (
 	color = flag.StringP("color", "c", "default", "Color to use")
-	dim = flag.BoolP("dim", "d", false,
+	dim   = flag.BoolP("dim", "d", false,
 		"Turn off bright colors where possible")
 
 	step  = flag.Int("step", 2, "Samples for each step (wave/lines)")
@@ -175,16 +175,161 @@ func size() (int, int) {
 	return w, h * 2
 }
 
+type cell struct {
+	on bool
+	ic int
+}
+
+type x4 struct {
+	arr   []cell
+	w, h  int
+	color bool
+}
+
+func (x *x4) fix() {
+	x.color = *icolor
+	x.w, x.h = termbox.Size()
+	x.w, x.h = x.w*2, x.h*2
+	l := x.w * x.h
+	if l > cap(x.arr) {
+		x.arr = make([]cell, l)
+		x.arr = x.arr[:l]
+	} else {
+		x.arr = x.arr[:l]
+		for i := range x.arr {
+			x.arr[i] = cell{}
+		}
+	}
+}
+
+func (b *x4) set(x, y int, c cell) {
+	if y*b.w+x >= len(b.arr) || x < 0 || y < 0 {
+		return
+	}
+	b.arr[y*b.w+x] = c
+}
+
+func (b *x4) get(x, y int) cell {
+	if y*b.w+x >= len(b.arr) || x < 0 || y < 0 {
+		return cell{}
+	}
+	return b.arr[y*b.w+x]
+}
+
+func (b *x4) do() {
+	w, h := b.w/2, b.h/2
+	for x := 0; x < w; x++ {
+		for y := 0; y < h; y++ {
+			xx, yy := x*2, y*2
+			ulc, urc, blc, brc := b.get(xx, yy), b.get(xx+1, yy), b.get(xx, yy+1), b.get(xx+1, yy+1)
+			if !(ulc.on || urc.on || blc.on || brc.on) {
+				continue
+			}
+			c := cellc(ulc.on, urc.on, blc.on, brc.on)
+			var ic int
+			var a int
+			if b.color {
+				if ulc.on {
+					ic += ulc.ic
+					a++
+				}
+				if urc.on {
+					ic += urc.ic
+					a++
+				}
+				if blc.on {
+					ic += blc.ic
+					a++
+				}
+				if brc.on {
+					ic += brc.ic
+					a++
+				}
+				if a > 0 {
+					on = iColors[ic/a]
+				}
+			}
+			termbox.SetCell(x, y, c, on, off)
+		}
+	}
+}
+
+func cellc(ul bool, ur bool, bl bool, br bool) rune {
+	if ul {
+		if ur {
+			if bl {
+				if br {
+					return '█'
+				} else {
+					return '▛'
+				}
+			} else {
+				if br {
+					return '▜'
+				} else {
+					return '▀'
+				}
+			}
+		} else {
+			if bl {
+				if br {
+					return '▙'
+				} else {
+					return '▌'
+				}
+			} else {
+				if br {
+					return '▚'
+				} else {
+					return '▘'
+				}
+			}
+		}
+	} else {
+		if ur {
+			if bl {
+				if br {
+					return '▟'
+				} else {
+					return '▞'
+				}
+			} else {
+				if br {
+					return '▐'
+				} else {
+					return '▝'
+				}
+			}
+		} else {
+			if bl {
+				if br {
+					return '▄'
+				} else {
+					return '▖'
+				}
+			} else {
+				if br {
+					return '▗'
+				} else {
+					return ' '
+				}
+			}
+		}
+	}
+}
+
 func drawWave(file *os.File, end chan bool) {
 	defer close(end)
 	var (
 		inRaw  []int16
 		ibound = len(iColors) - 1
 		ilen   = float64(len(iColors))
+		back   = x4{}
 	)
 	for {
-		w, h := size()
-		if s := w * *step; len(inRaw) != s {
+		back.fix()
+		w, h := back.w, back.h
+		if s := 1 + w * *step; len(inRaw) != s {
 			inRaw = make([]int16, s)
 		}
 
@@ -194,25 +339,44 @@ func drawWave(file *os.File, end chan bool) {
 
 		half_h := float64(h / 2)
 		div := maxInt16 / half_h
-		for pos := 0; pos < w; pos++ {
-			var v float64
+		var vi1, vi3 int
+		var v1, v3 float64
+		pos := 0
+		{
 			for i := 0; i < *step; i++ {
-				v += float64(inRaw[pos**step+i])
+				v1 += float64(inRaw[pos**step+i])
 			}
-			v /= float64(*step)
-
-			if *icolor {
-				on = iColors[min(ibound, abs(int(v/(maxInt16/ilen))))]
-			}
-
-			vi := int(v/div + half_h)
-			if vi%2 == 0 {
-				termbox.SetCell(pos, vi/2, '▀', on, off)
-			} else {
-				termbox.SetCell(pos, vi/2, '▄', on, off)
-			}
+			v1 /= float64(*step)
+			vi1 = int(v1/div + half_h)
 		}
 
+		for pos := 0; pos < w; pos++ {
+			for i := 0; i < *step; i++ {
+				v3 += float64(inRaw[pos**step+i])
+			}
+			v3 /= float64(*step)
+			vi3 = int(v3/div + half_h)
+
+			up, down := vi1, vi1
+			if vi3 > up {
+				up = vi3
+			}
+			if vi3 < down {
+				down = vi3
+			}
+
+			if up-down < 1 {
+				down--
+			}
+
+			for ; down < up; down++ {
+				back.set(pos, down, cell{true, min(ibound, abs(int(v1/maxInt16*ilen)))})
+			}
+
+			vi1, vi3 = vi3, 0
+			v1, v3 = v3, 0
+		}
+		back.do()
 		termbox.Flush()
 		termbox.Clear(off, off)
 	}
@@ -228,10 +392,12 @@ func drawSpectrum(file *os.File, end chan bool) {
 		inRaw []int16
 		out   []complex128
 		plan  *fftw.Plan
+		back  = x4{}
 	)
 
 	for {
-		w, h := size()
+		back.fix()
+		w, h := back.w, back.h
 		if resn != w {
 			w := max(2, w)
 			if out != nil {
@@ -256,18 +422,13 @@ func drawSpectrum(file *os.File, end chan bool) {
 		plan.Execute()
 		for i := 0; i < w; i++ {
 			v := cmplx.Abs(out[i]) / 1e5 / *scale
-			if *icolor {
-				on = iColors[min(ilen, int(v*flen))]
-			}
 			hd := int(v * float64(h))
-			for j := h - 1; j > h-hd; j-- {
-				termbox.SetCell(i, j/2, '┃', on, off)
-			}
-			if hd%2 == 0 {
-				termbox.SetCell(i, (h-hd)/2, '╻', on, off)
+			for j := h; j > h-hd; j-- {
+				back.set(i, j, cell{true, min(ilen, int(v*flen))})
 			}
 		}
 
+		back.do()
 		termbox.Flush()
 		termbox.Clear(off, off)
 	}
@@ -291,12 +452,26 @@ func (c *coord) step(x, y int) {
 	c.x, c.y = mod(c.x, x), mod(c.y, y)
 }
 
+type ringbuf struct {
+	buf   []pair
+	start int
+}
+
+func (r *ringbuf) push(p pair) {
+	r.buf[r.start] = p
+	r.start = (r.start + 1) % len(r.buf)
+}
+
+func (r *ringbuf) get(i int) pair {
+	return r.buf[(r.start+i)%len(r.buf)]
+}
+
 func drawLines(file *os.File, end chan bool) {
 	defer close(end)
 	var (
 		c, bc coord
 		inraw = make([]int16, *step)
-		hist  = make([]pair, 1000)
+		hist  = ringbuf{make([]pair, 1000), 0}
 		ilen  = len(iColors) - 1
 		filen = float64(ilen)
 	)
@@ -307,26 +482,27 @@ func drawLines(file *os.File, end chan bool) {
 		}
 
 		var raw float64
-		for i := range inraw {
-			raw += float64(inraw[i])
+		for _, rawi := range inraw {
+			raw = float64(rawi)
+			raw /= float64(*step)
+			c.dir = min(8, abs(int(raw/maxInt16*8)))
+			bc.dir = 8 - c.dir
+			if *icolor {
+				on = iColors[min(ilen, abs(int(raw/maxInt16*filen)))]
+			}
+
+			w, h := termbox.Size()
+			bc.step(w, h)
+			c.step(w, h)
+
+			// TODO: make this more efficient, somehow
+			hist.push(pair{c.x, c.y})
+			a := hist.get(len(hist.buf) - 1)
+
+			termbox.SetCell(a.x, a.y, '#', on, off)
+			//termbox.SetCell(c.x, c.y, '#', on, off)
+
+			termbox.Flush()
 		}
-		raw /= float64(*step)
-		c.dir = min(8, abs(int(raw/maxInt16*8)))
-		bc.dir = 8 - c.dir
-		if *icolor {
-			on = iColors[min(ilen, abs(int(raw/maxInt16*filen)))]
-		}
-
-		w, h := termbox.Size()
-		bc.step(w, h)
-		c.step(w, h)
-
-		// TODO: make this more efficient, somehow
-		hist = append(hist[1:], pair{c.x, c.y})
-
-		termbox.SetCell(hist[0].x, hist[0].y, ' ', off, off)
-		termbox.SetCell(c.x, c.y, '#', on, off)
-
-		termbox.Flush()
 	}
 }
